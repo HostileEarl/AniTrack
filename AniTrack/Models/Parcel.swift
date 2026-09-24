@@ -3,15 +3,25 @@
 //  AniTrack — MODEL LAYER
 //
 //  Shown to the user as a "field". The type keeps the name Parcel because it is
-//  the land record, and renaming it across the codebase would gain nothing that
-//  the display labels do not already give.
+//  the land record.
+//
+//  A SwiftData @Model, which means it must be a class rather than a struct.
+//  Note what this file still does NOT import: SwiftUI. SwiftData is a storage
+//  framework, not an interface one, so the model layer stays free of anything
+//  to do with how the app looks.
 //
 
 import Foundation
+import SwiftData
 
-struct Parcel: Identifiable, Codable, Hashable {
+@Model
+final class Parcel {
 
-    let id: String
+    /// Our own stable identifier, kept alongside SwiftData's internal one so
+    /// that seed data, navigation and the Firestore profile can all refer to a
+    /// field by the same value.
+    @Attribute(.unique) var id: String
+
     var name: String
     var barangay: String
     var municipality: String
@@ -56,6 +66,8 @@ struct Parcel: Identifiable, Codable, Hashable {
         self.longitude = longitude
     }
 
+    // MARK: - Computed (not stored)
+
     /// "Sto. Niño, Cabanatuan"
     var placeLabel: String {
         return "\(barangay), \(municipality)"
@@ -64,6 +76,12 @@ struct Parcel: Identifiable, Codable, Hashable {
     /// "3.2 ha"
     var areaLabel: String {
         return String(format: "%.1f ha", areaHectares)
+    }
+
+    /// True once the field has real coordinates, so the map can leave out
+    /// fields that were added without a place being found.
+    var hasLocation: Bool {
+        return latitude != 0 || longitude != 0
     }
 
     var daysUntilHarvest: Int {

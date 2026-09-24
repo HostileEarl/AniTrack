@@ -2,18 +2,19 @@
 //  FieldDetailView.swift
 //  AniTrack — SCREEN 2a (pushed)
 //
-//  The field passed in is treated as an identifier only. The live copy is read
-//  back from the controller each time the body runs, so a change made on the
-//  dashboard or by another screen shows here too. Holding the struct that was
-//  passed in would leave this screen showing a stale copy, because a struct is
-//  copied at the moment it is handed over.
+//  This screen takes an id, not an object, and looks the field up each time the
+//  body runs. That started as a fix for value semantics — a struct handed to a
+//  screen is a copy, so edits made elsewhere never appeared here. Since the move
+//  to SwiftData the models are classes, but taking an id is still the right
+//  choice: a screen that outlives a deleted record shows "not found" instead of
+//  holding a dangling object.
 //
 
 import SwiftUI
 
 struct FieldDetailView: View {
 
-    let parcel: Parcel
+    let parcelID: String
 
     @EnvironmentObject private var auth: AuthController
     @EnvironmentObject private var data: FarmDataController
@@ -23,34 +24,31 @@ struct FieldDetailView: View {
         return ViewerContext(user: auth.currentUser)
     }
 
-    /// Falls back to the copy passed in if the field has been deleted.
-    private var current: Parcel {
-        return data.parcel(id: parcel.id) ?? parcel
+    private var current: Parcel? {
+        return data.parcel(id: parcelID)
     }
 
     private var openJobs: [FarmJob] {
-        return data.openJobs(forParcel: parcel.id)
+        return data.openJobs(forParcel: parcelID)
     }
 
     private var recentHarvests: [HarvestRecord] {
-        return data.harvests(forParcel: parcel.id)
+        return data.harvests(forParcel: parcelID)
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppTheme.sectionSpacing) {
-                summaryCard
-                cropStageCard
-                jobsCard
-                harvestsCard
-                notesCard
+        Group {
+            if current == nil {
+                EmptyStateView(symbolName: "questionmark.folder",
+                               title: "This field is gone",
+                               message: "It was removed while you were looking at it.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AppTheme.canvas)
+            } else {
+                content
             }
-            .padding(.horizontal, AppTheme.screenPadding)
-            .padding(.top, 8)
-            .padding(.bottom, 28)
         }
-        .background(AppTheme.canvas)
-        .navigationTitle(current.name)
+        .navigationTitle(current?.name ?? "Field")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if viewer.permissions.isReadOnly {
@@ -59,28 +57,46 @@ struct FieldDetailView: View {
         }
     }
 
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppTheme.sectionSpacing) {
+                if let field = current {
+                    summaryCard(field)
+                    cropStageCard(field)
+                    jobsCard(field)
+                    harvestsCard(field)
+                    notesCard(field)
+                }
+            }
+            .padding(.horizontal, AppTheme.screenPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
+        }
+        .background(AppTheme.canvas)
+    }
+
     // MARK: - Summary
 
-    private var summaryCard: some View {
+    private func summaryCard(_ field: Parcel) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                StatusChip(text: current.condition.displayName,
-                           tint: current.condition.tint,
-                           symbolName: current.condition.symbolName)
-                StatusChip(text: current.crop.displayName,
+                StatusChip(text: field.condition.displayName,
+                           tint: field.condition.tint,
+                           symbolName: field.condition.symbolName)
+                StatusChip(text: field.crop.displayName,
                            tint: AppTheme.paddy,
-                           symbolName: current.crop.symbolName)
+                           symbolName: field.crop.symbolName)
             }
 
-            Text(current.placeLabel)
+            Text(field.placeLabel)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
 
             HStack(alignment: .top, spacing: 20) {
-                figure(title: "Size", value: current.areaLabel)
+                figure(title: "Size", value: field.areaLabel)
                 figure(title: "Team leader",
-                       value: data.worker(id: current.teamLeaderID)?.shortName ?? "Not assigned")
-                figure(title: "Harvest", value: current.harvestCountdown)
+                       value: data.worker(id: field.teamLeaderID)?.shortName ?? "Not assigned")
+                figure(title: "Harvest", value: field.harvestCountdown)
             }
         }
         .cardSurface()
@@ -88,28 +104,28 @@ struct FieldDetailView: View {
 
     // MARK: - Crop Stage
 
-    private var cropStageCard: some View {
+    private func cropStageCard(_ field: Parcel) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Crop stage")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
                 Spacer()
-                StatusChip(text: current.stage.displayName,
+                StatusChip(text: field.stage.displayName,
                            tint: AppTheme.paddy,
-                           symbolName: current.stage.symbolName)
+                           symbolName: field.stage.symbolName)
             }
 
             MetricBar(label: "Progress to harvest",
-                      valueText: Formatting.percent(current.stage.progress),
-                      caption: "Planted \(current.plantedOn.formatted(.dateTime.day().month(.abbreviated).year()))",
-                      ratio: current.stage.progress,
+                      valueText: Formatting.percent(field.stage.progress),
+                      caption: "Planted \(field.plantedOn.formatted(.dateTime.day().month(.abbreviated).year()))",
+                      ratio: field.stage.progress,
                       tint: AppTheme.shoot)
 
             if viewer.permissions.canAdvanceStage {
                 Button {
-                    data.advanceStage(for: current, by: viewer)
-                    toasts.show("Moved to \(data.parcel(id: current.id)?.stage.displayName ?? "")")
+                    data.advanceStage(for: field, by: viewer)
+                    toasts.show("Moved to \(field.stage.displayName)")
                 } label: {
                     Label("Move to next stage", systemImage: "arrow.forward.circle")
                         .font(.system(size: 15, weight: .medium))
@@ -123,7 +139,7 @@ struct FieldDetailView: View {
 
     // MARK: - Jobs
 
-    private var jobsCard: some View {
+    private func jobsCard(_ field: Parcel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Jobs to do",
                           trailing: "\(openJobs.count)",
@@ -136,7 +152,7 @@ struct FieldDetailView: View {
             } else {
                 ForEach(openJobs) { job in
                     JobRow(job: job,
-                           fieldName: current.name,
+                           fieldName: field.name,
                            assigneeName: data.assigneeName(for: job),
                            canFinish: viewer.permissions.canFinishJobs,
                            onToggleDone: { data.toggleJobDone(job, by: viewer) })
@@ -148,7 +164,7 @@ struct FieldDetailView: View {
 
     // MARK: - Harvests
 
-    private var harvestsCard: some View {
+    private func harvestsCard(_ field: Parcel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Last harvests",
                           trailing: "\(recentHarvests.count) records")
@@ -160,7 +176,7 @@ struct FieldDetailView: View {
             } else {
                 ForEach(recentHarvests.prefix(4)) { record in
                     HarvestRow(record: record,
-                               fieldName: current.name,
+                               fieldName: field.name,
                                amountText: data.amountLabel(record.kilograms))
                 }
             }
@@ -170,11 +186,11 @@ struct FieldDetailView: View {
 
     // MARK: - Notes
 
-    private var notesCard: some View {
+    private func notesCard(_ field: Parcel) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Notes from the field")
 
-            Text(current.notes.isEmpty ? "No notes written down." : current.notes)
+            Text(field.notes.isEmpty ? "No notes written down." : field.notes)
                 .font(.system(size: 15))
                 .foregroundStyle(AppTheme.ink.opacity(0.75))
                 .lineSpacing(3)
@@ -204,9 +220,10 @@ struct FieldDetailView: View {
     /// never keeps its own copy of the field's condition.
     private var conditionBinding: Binding<FieldCondition> {
         return Binding(
-            get: { current.condition },
+            get: { current?.condition ?? .good },
             set: { newValue in
-                data.updateCondition(newValue, for: current, by: viewer)
+                guard let field = current else { return }
+                data.updateCondition(newValue, for: field, by: viewer)
                 toasts.show("Field set to \(newValue.displayName)")
             }
         )
@@ -228,7 +245,7 @@ struct FieldDetailView: View {
 
 #Preview {
     NavigationStack {
-        FieldDetailView(parcel: SampleFarmData.parcels[4])
+        FieldDetailView(parcelID: "p5")
             .environmentObject(AuthController.previewSignedIn())
             .environmentObject(FarmDataController.preview)
             .environmentObject(ToastController())

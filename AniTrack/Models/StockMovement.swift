@@ -4,10 +4,13 @@
 //
 
 import Foundation
+import SwiftData
 
-struct StockMovement: Identifiable, Codable, Hashable {
+@Model
+final class StockMovement {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var itemID: String
     var kind: StockMovementKind
     var quantity: Double

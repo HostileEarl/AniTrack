@@ -59,6 +59,11 @@ struct ParcelRow: View {
 }
 
 #Preview {
-    ParcelRow(parcel: SampleFarmData.parcels[4])
-        .padding()
+    let data = FarmDataController.preview
+    return VStack(spacing: 0) {
+        ForEach(data.parcels.prefix(3)) { parcel in
+            ParcelRow(parcel: parcel)
+        }
+    }
+    .padding()
 }

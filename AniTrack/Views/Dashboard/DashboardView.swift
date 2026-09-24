@@ -138,7 +138,7 @@ struct DashboardView: View {
                     .foregroundStyle(AppTheme.muted)
             } else {
                 ForEach(analytics.fieldsNeedingAttention) { parcel in
-                    NavigationLink(value: AppRoute.field(parcel)) {
+                    NavigationLink(value: AppRoute.field(parcel.id)) {
                         ParcelRow(parcel: parcel)
                     }
                     .buttonStyle(.plain)

@@ -14,10 +14,40 @@ struct RouteDestination: View {
 
     var body: some View {
         switch route {
-        case .field(let parcel):
-            FieldDetailView(parcel: parcel)
+        case .field(let id):
+            FieldDetailView(parcelID: id)
         case .alerts:
             AlertsView()
+        case .fieldNotes:
+            FieldNotesView()
+        case .fieldNote(let id):
+            FieldNoteDetailView(noteID: id)
+        case .supplies:
+            SuppliesView()
+        case .supplyItem(let id):
+            SupplyItemDetailView(itemID: id)
+        case .team:
+            TeamView()
+        case .workerJobs(let id):
+            WorkerJobsView(workerID: id)
+        case .map:
+            FieldMapView()
+        case .weather:
+            WeatherView()
+        case .reports:
+            ReportsView()
+        case .profile:
+            ProfileView()
+        case .editProfile:
+            EditProfileView()
+        case .changePassword:
+            ChangePasswordView()
+        case .settings:
+            SettingsView()
+        case .backup:
+            BackupView()
+        case .activity:
+            ActivityView()
         }
     }
 }

@@ -4,11 +4,13 @@
 //
 
 import Foundation
+import SwiftData
 
-/// A member of the farm team who can be given jobs.
-struct Worker: Identifiable, Codable, Hashable {
+@Model
+final class Worker {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var fullName: String
     var role: TeamRole
     var contactNumber: String
@@ -25,6 +27,8 @@ struct Worker: Identifiable, Codable, Hashable {
         self.contactNumber = contactNumber
         self.homeBarangay = homeBarangay
     }
+
+    // MARK: - Computed (not stored)
 
     /// Up to two letters for the round avatar badge.
     var initials: String {

@@ -35,10 +35,13 @@ struct MainTabView: View {
                     .tabItem { Label("Fields", systemImage: "map") }
 
                 if viewer.permissions.isOwner {
-                    ComingSoonView(title: "Reports",
-                                   symbolName: "doc.text",
-                                   stage: "Final")
-                        .tabItem { Label("Reports", systemImage: "doc.text") }
+                    NavigationStack {
+                        ReportsView()
+                            .navigationDestination(for: AppRoute.self) { route in
+                                RouteDestination(route: route)
+                            }
+                    }
+                    .tabItem { Label("Reports", systemImage: "doc.text") }
                 } else {
                     JobsView()
                         .tabItem { Label("Jobs", systemImage: "checklist") }
@@ -51,38 +54,6 @@ struct MainTabView: View {
                     .tabItem { Label("More", systemImage: "ellipsis.circle") }
             }
             .tint(AppTheme.paddy)
-        }
-    }
-}
-
-// MARK: - Placeholder for Later Stages
-
-/// Marks a screen that is designed and prototyped but not yet built, so the
-/// gap is visible rather than hidden behind a dead tab.
-struct ComingSoonView: View {
-
-    let title: String
-    let symbolName: String
-    let stage: String
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                Image(systemName: symbolName)
-                    .font(.system(size: 38, weight: .light))
-                    .foregroundStyle(AppTheme.shoot)
-                Text("\(title) arrives in \(stage)")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
-                Text("This screen is designed in the prototype and is next to be built.")
-                    .font(.system(size: 15))
-                    .foregroundStyle(AppTheme.muted)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(AppTheme.canvas)
-            .navigationTitle(title)
         }
     }
 }
@@ -135,56 +106,73 @@ struct MoreTabView: View {
                                     ? "\(data.unreadAlertCount) unread"
                                     : "Nothing new")
                     }
-                    comingSoonRow(symbol: "doc.text.magnifyingglass",
-                                  title: "Field notes",
-                                  subtitle: unresolvedNotesSubtitle,
-                                  stage: "Final")
-                    if viewer.permissions.canSeeSupplies {
-                        comingSoonRow(symbol: "shippingbox",
-                                      title: "Supplies",
-                                      subtitle: suppliesSubtitle,
-                                      stage: "Final")
+                    NavigationLink(value: AppRoute.fieldNotes) {
+                        menuRow(symbol: "doc.text.magnifyingglass",
+                                title: "Field notes",
+                                subtitle: unresolvedNotesSubtitle)
                     }
-                    comingSoonRow(symbol: "person.2",
-                                  title: "Team",
-                                  subtitle: "\(data.workers.count) people",
-                                  stage: "Final")
-                    comingSoonRow(symbol: "map",
-                                  title: "Map",
-                                  subtitle: "Where every field sits",
-                                  stage: "Final")
+                    if viewer.permissions.canSeeSupplies {
+                        NavigationLink(value: AppRoute.supplies) {
+                            menuRow(symbol: "shippingbox",
+                                    title: "Supplies",
+                                    subtitle: suppliesSubtitle)
+                        }
+                    }
+                    NavigationLink(value: AppRoute.team) {
+                        menuRow(symbol: "person.2",
+                                title: "Team",
+                                subtitle: "\(data.workers.count) people")
+                    }
+                    NavigationLink(value: AppRoute.map) {
+                        menuRow(symbol: "map",
+                                title: "Map",
+                                subtitle: "Where every field sits")
+                    }
                 }
 
                 Section("Records") {
-                    comingSoonRow(symbol: "chart.bar.doc.horizontal",
-                                  title: "Reports",
-                                  subtitle: "Totals by month, crop and field",
-                                  stage: "Final")
-                    comingSoonRow(symbol: "cloud.sun",
-                                  title: "Weather",
-                                  subtitle: "What is coming this week",
-                                  stage: "Final")
+                    NavigationLink(value: AppRoute.reports) {
+                        menuRow(symbol: "chart.bar.doc.horizontal",
+                                title: "Reports",
+                                subtitle: "Totals by month, crop and field")
+                    }
+                    NavigationLink(value: AppRoute.weather) {
+                        menuRow(symbol: "cloud.sun",
+                                title: "Weather",
+                                subtitle: "What is coming this week")
+                    }
                 }
 
-                Section("Saving and backup") {
-                    Toggle("No internet mode", isOn: Binding(
-                        get: { data.isOffline },
-                        set: { data.setOffline($0) }
-                    ))
-                    LabeledContent("Changes waiting", value: "\(data.pendingChanges.count)")
-                    LabeledContent("Records saved", value: "\(data.storedRecordCount)")
-                    LabeledContent("Storage used", value: data.storageSizeLabel())
-                    LabeledContent("Accounts kept", value: auth.providerName)
-
-                    Toggle("Show amounts in sacks", isOn: Binding(
-                        get: { data.showAmountsInSacks },
-                        set: { data.setShowAmountsInSacks($0) }
-                    ))
+                Section("You") {
+                    NavigationLink(value: AppRoute.profile) {
+                        menuRow(symbol: "person.crop.circle",
+                                title: "Profile",
+                                subtitle: auth.currentUser?.fullName ?? "Your details")
+                    }
+                    NavigationLink(value: AppRoute.backup) {
+                        menuRow(symbol: "externaldrive",
+                                title: "Saving and backup",
+                                subtitle: backupSubtitle)
+                    }
+                    NavigationLink(value: AppRoute.activity) {
+                        menuRow(symbol: "clock.arrow.circlepath",
+                                title: "Recent activity",
+                                subtitle: "\(data.activity.count) changes recorded")
+                    }
+                    if viewer.permissions.canSeeSettings {
+                        NavigationLink(value: AppRoute.settings) {
+                            menuRow(symbol: "gearshape",
+                                    title: "Settings",
+                                    subtitle: "How the app behaves")
+                        }
+                    }
                 }
 
-                Section {
-                    Button("Log out", role: .destructive) {
-                        isConfirmingSignOut = true
+                if !viewer.permissions.canSeeSettings {
+                    Section {
+                        Button("Log out", role: .destructive) {
+                            isConfirmingSignOut = true
+                        }
                     }
                 }
             }
@@ -209,6 +197,11 @@ struct MoreTabView: View {
     private var unresolvedNotesSubtitle: String {
         let open = data.visibleFieldNotes(for: viewer).filter { !$0.isResolved }.count
         return open > 0 ? "\(open) still to deal with" : "Nothing waiting"
+    }
+
+    private var backupSubtitle: String {
+        let waiting = data.pendingChanges.count
+        return waiting > 0 ? "\(waiting) changes waiting" : "Everything is saved"
     }
 
     private var suppliesSubtitle: String {
@@ -236,21 +229,6 @@ struct MoreTabView: View {
         .padding(.vertical, 3)
     }
 
-    private func comingSoonRow(symbol: String, title: String, subtitle: String, stage: String) -> some View {
-        HStack {
-            menuRow(symbol: symbol, title: title, subtitle: subtitle)
-            Spacer()
-            Text(stage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AppTheme.muted)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(AppTheme.ink.opacity(0.06))
-                )
-        }
-    }
 }
 
 #Preview {

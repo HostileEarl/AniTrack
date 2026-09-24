@@ -14,6 +14,10 @@ import Foundation
 import FirebaseCore
 #endif
 
+//  Marked @MainActor because `isReady` is shared mutable state, which Swift 6
+//  will not allow to sit loose. Both callers are already on the main actor —
+//  SwiftUI's App protocol and AuthController — so this costs nothing.
+@MainActor
 enum FirebaseBootstrap {
 
     /// True when Firebase is in the project and its settings file was found.
@@ -54,6 +58,3 @@ enum FirebaseBootstrap {
         return LocalAuthService()
     }
 }
-
-
-

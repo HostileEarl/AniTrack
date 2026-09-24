@@ -7,10 +7,13 @@
 //
 
 import Foundation
+import SwiftData
 
-struct SupplyItem: Identifiable, Codable, Hashable {
+@Model
+final class SupplyItem {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var name: String
     var category: SupplyCategory
     var quantity: Double
@@ -35,6 +38,8 @@ struct SupplyItem: Identifiable, Codable, Hashable {
         self.warnBelow = warnBelow
         self.unitCost = unitCost
     }
+
+    // MARK: - Computed (not stored)
 
     var isRunningLow: Bool {
         return quantity <= warnBelow

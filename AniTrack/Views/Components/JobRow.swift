@@ -109,13 +109,13 @@ struct JobRow: View {
 }
 
 #Preview {
-    VStack(spacing: 0) {
-        JobRow(job: SampleFarmData.jobs[2],
-               fieldName: "Sapang Bato Banana Rows",
-               assigneeName: "R. Sarmiento")
-        JobRow(job: SampleFarmData.jobs[6],
-               fieldName: "Hilltop Corn Field",
-               assigneeName: "E. Villamor")
+    let data = FarmDataController.preview
+    return VStack(spacing: 0) {
+        ForEach(data.jobs.prefix(3)) { job in
+            JobRow(job: job,
+                   fieldName: data.parcelName(for: job.parcelID),
+                   assigneeName: data.assigneeName(for: job))
+        }
     }
     .padding()
 }

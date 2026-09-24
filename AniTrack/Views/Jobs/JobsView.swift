@@ -140,8 +140,7 @@ struct JobsView: View {
 
     /// Tapping a job row opens the field it belongs to.
     private func routeForField(of job: FarmJob) -> AppRoute {
-        let parcel = data.parcel(id: job.parcelID) ?? SampleFarmData.parcels[0]
-        return .field(parcel)
+        return .field(job.parcelID)
     }
 
     private func finish(_ job: FarmJob) {

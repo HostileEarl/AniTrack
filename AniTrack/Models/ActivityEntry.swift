@@ -7,10 +7,13 @@
 //
 
 import Foundation
+import SwiftData
 
-struct ActivityEntry: Identifiable, Codable, Hashable {
+@Model
+final class ActivityEntry {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var happenedOn: Date
     var actorName: String
     var summary: String
@@ -30,7 +33,11 @@ struct ActivityEntry: Identifiable, Codable, Hashable {
 }
 
 /// A change made while offline, waiting to be backed up.
-struct PendingChange: Identifiable, Codable, Hashable {
+///
+/// Deliberately NOT a @Model: the waiting list describes this run of the app,
+/// not the farm, and saving it would mean a change could look like it was still
+/// waiting long after it had been backed up.
+struct PendingChange: Identifiable, Hashable {
 
     let id: String
     var madeOn: Date

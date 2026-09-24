@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+// ObservableObject lives in Combine. Older Xcode versions re-exported it
+// through SwiftUI, so this import was not needed; Xcode 26 requires it.
 import Combine
 
 @MainActor

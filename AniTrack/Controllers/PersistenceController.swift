@@ -2,20 +2,34 @@
 //  PersistenceController.swift
 //  AniTrack — CONTROLLER LAYER
 //
-//  Saves the model collections as JSON files in the app's Documents directory,
-//  so data survives closing the app.
+//  Small settings and account storage.
 //
-//  Why JSON files rather than SwiftData: every model here is already a Codable
-//  value type, and the whole app funnels its writes through one controller. That
-//  makes file storage a small, dependable addition instead of a rewrite into
-//  reference-type @Model classes, which would also weaken the strict MVC split
-//  the project is built on. The save and load calls sit behind this one type, so
-//  moving to SwiftData later means changing this file and nothing else.
+//  The farm's data — fields, jobs, harvests, notes, supplies — lives in
+//  SwiftData and is handled by FarmDataController. What is left here is the
+//  handful of things SwiftData is the wrong tool for:
+//
+//    - whether the intro pages have been seen
+//    - whether amounts are shown in sacks
+//    - the on-device account list, used only when Firebase is not connected
+//
+//  These are settings rather than farm records: a few values read once at
+//  launch, with no querying, sorting or relationships. A database would be more
+//  machinery than the job needs.
 //
 
 import Foundation
 
-final class PersistenceController {
+//  Marked Sendable because Swift 6 will not let a plain `static let` of a
+//  non-Sendable type be read from a nonisolated context — which is exactly what
+//  `persistence: PersistenceController = .shared` does in the initialisers of
+//  LocalAuthService, AuthController and FarmDataController.
+//
+//  The claim is honest rather than a silencer: every stored property is a `let`
+//  and never changes after init, and every write to disk happens on one private
+//  serial queue. The `@unchecked` is needed only because JSONEncoder and
+//  JSONDecoder are classes that Foundation has not marked Sendable.
+
+final class PersistenceController: @unchecked Sendable {
 
     static let shared = PersistenceController()
 
@@ -43,8 +57,7 @@ final class PersistenceController {
     // MARK: - File Locations
 
     private enum Store: String {
-        case parcels, jobs, harvests, fieldNotes, supplies
-        case stockMovements, alerts, activity, accounts, settings
+        case accounts, settings
     }
 
     private var directory: URL? {
@@ -87,32 +100,6 @@ final class PersistenceController {
         }
     }
 
-    // MARK: - Farm Data
-
-    func saveParcels(_ value: [Parcel]) { write(value, to: .parcels) }
-    func loadParcels() -> [Parcel]? { read([Parcel].self, from: .parcels) }
-
-    func saveJobs(_ value: [FarmJob]) { write(value, to: .jobs) }
-    func loadJobs() -> [FarmJob]? { read([FarmJob].self, from: .jobs) }
-
-    func saveHarvests(_ value: [HarvestRecord]) { write(value, to: .harvests) }
-    func loadHarvests() -> [HarvestRecord]? { read([HarvestRecord].self, from: .harvests) }
-
-    func saveFieldNotes(_ value: [FieldNote]) { write(value, to: .fieldNotes) }
-    func loadFieldNotes() -> [FieldNote]? { read([FieldNote].self, from: .fieldNotes) }
-
-    func saveSupplies(_ value: [SupplyItem]) { write(value, to: .supplies) }
-    func loadSupplies() -> [SupplyItem]? { read([SupplyItem].self, from: .supplies) }
-
-    func saveStockMovements(_ value: [StockMovement]) { write(value, to: .stockMovements) }
-    func loadStockMovements() -> [StockMovement]? { read([StockMovement].self, from: .stockMovements) }
-
-    func saveAlerts(_ value: [FarmAlert]) { write(value, to: .alerts) }
-    func loadAlerts() -> [FarmAlert]? { read([FarmAlert].self, from: .alerts) }
-
-    func saveActivity(_ value: [ActivityEntry]) { write(value, to: .activity) }
-    func loadActivity() -> [ActivityEntry]? { read([ActivityEntry].self, from: .activity) }
-
     // MARK: - Accounts
 
     func saveAccounts(_ value: [FarmUser]) { write(value, to: .accounts) }
@@ -150,30 +137,4 @@ final class PersistenceController {
 
     // MARK: - Reset
 
-    /// Deletes every saved file so the app starts again from the sample data.
-    func eraseAll() {
-        guard enabled else { return }
-        let stores: [Store] = [.parcels, .jobs, .harvests, .fieldNotes, .supplies,
-                               .stockMovements, .alerts, .activity]
-        for store in stores {
-            guard let url = url(for: store) else { continue }
-            try? FileManager.default.removeItem(at: url)
-        }
-    }
-
-    // MARK: - Storage Summary
-
-    /// Total bytes used by the saved files, shown on the Saving and backup screen.
-    func storageBytes() -> Int {
-        guard enabled, let directory = directory else { return 0 }
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.fileSizeKey])) ?? []
-        return contents
-            .filter { $0.lastPathComponent.hasPrefix("anitrack-") }
-            .reduce(0) { total, url in
-                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                return total + size
-            }
-    }
 }

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftData
 
 /// Where tapping an alert should take the user.
 enum AlertDestination: String, Codable, Hashable {
@@ -14,9 +15,11 @@ enum AlertDestination: String, Codable, Hashable {
     case fields
 }
 
-struct FarmAlert: Identifiable, Codable, Hashable {
+@Model
+final class FarmAlert {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var kind: AlertKind
     var message: String
     var relatedID: String?

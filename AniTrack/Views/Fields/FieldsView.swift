@@ -36,7 +36,7 @@ struct FieldsView: View {
                     List {
                         Section {
                             ForEach(fields) { parcel in
-                                NavigationLink(value: AppRoute.field(parcel)) {
+                                NavigationLink(value: AppRoute.field(parcel.id)) {
                                     ParcelRow(parcel: parcel)
                                 }
                             }

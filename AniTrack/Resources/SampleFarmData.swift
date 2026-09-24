@@ -8,12 +8,33 @@
 //
 
 import Foundation
+import SwiftData
 
 enum SampleFarmData {
 
+    /// Fills an empty store on first launch. Does nothing if fields already
+    /// exist, so reopening the app never duplicates the sample farm.
+    @MainActor
+    static func seedIfEmpty(into context: ModelContext) {
+        let existing = try? context.fetch(FetchDescriptor<Parcel>())
+        guard (existing?.isEmpty ?? true) else { return }
+
+        for worker in makeWorkers() { context.insert(worker) }
+        for parcel in makeParcels() { context.insert(parcel) }
+        for job in makeJobs() { context.insert(job) }
+        for harvest in makeHarvests() { context.insert(harvest) }
+        for note in makeFieldNotes() { context.insert(note) }
+        for item in makeSupplies() { context.insert(item) }
+        for alert in makeAlerts() { context.insert(alert) }
+        for entry in makeActivity() { context.insert(entry) }
+
+        try? context.save()
+    }
+
     // MARK: - Team
 
-    static let workers: [Worker] = [
+    static func makeWorkers() -> [Worker] {
+        return [
         Worker(id: "w1", fullName: "Marilou Bautista", role: .teamLeader,
                contactNumber: "0917 555 0142", homeBarangay: "Sto. Niño"),
         Worker(id: "w2", fullName: "Ernesto Villamor", role: .cropTechnician,
@@ -22,11 +43,13 @@ enum SampleFarmData {
                contactNumber: "0995 555 0208", homeBarangay: "Malabon"),
         Worker(id: "w4", fullName: "Rogelio Sarmiento", role: .harvestHand,
                contactNumber: "0906 555 0311", homeBarangay: "Sapang Bato")
-    ]
+        ]
+    }
 
     // MARK: - Fields
 
-    static let parcels: [Parcel] = [
+    static func makeParcels() -> [Parcel] {
+        return [
         Parcel(id: "p1", name: "Riverside Block A", barangay: "Sto. Niño",
                municipality: "Cabanatuan", areaHectares: 3.2, crop: .rice,
                stage: .maturing, condition: .good,
@@ -69,11 +92,13 @@ enum SampleFarmData {
                teamLeaderID: "w2",
                notes: "Resting until the next wet season. Dikes repaired.",
                latitude: 15.498, longitude: 120.935)
-    ]
+        ]
+    }
 
     // MARK: - Jobs
 
-    static let jobs: [FarmJob] = [
+    static func makeJobs() -> [FarmJob] {
+        return [
         FarmJob(id: "t1", title: "Scout for stem borer",
                 details: "Walk the eastern dike and count damaged tillers per 10 hills.",
                 parcelID: "p2", assigneeID: "w2", dueOn: .daysFromToday(0),
@@ -106,11 +131,13 @@ enum SampleFarmData {
                 details: "",
                 parcelID: "p2", assigneeID: "w3", dueOn: .daysFromToday(-9),
                 status: .done, priority: .normal)
-    ]
+        ]
+    }
 
     // MARK: - Harvests
 
-    static let harvests: [HarvestRecord] = [
+    static func makeHarvests() -> [HarvestRecord] {
+        return [
         HarvestRecord(id: "h1", parcelID: "p4", crop: .vegetables,
                       harvestedOn: .daysFromToday(-4), kilograms: 165,
                       quality: .best, recordedByID: "w3", remarks: "Ampalaya, first pick."),
@@ -131,11 +158,13 @@ enum SampleFarmData {
         HarvestRecord(id: "h6", parcelID: "p3", crop: .corn,
                       harvestedOn: .daysFromToday(-52), kilograms: 15_600,
                       quality: .best, recordedByID: "w2", remarks: "")
-    ]
+        ]
+    }
 
     // MARK: - Field Notes
 
-    static let fieldNotes: [FieldNote] = [
+    static func makeFieldNotes() -> [FieldNote] {
+        return [
         FieldNote(id: "fr1", parcelID: "p5", reportedByName: "Rogelio Sarmiento",
                   urgency: .urgent,
                   observation: "The yellow leaves spread to two more plants since Monday. The lower leaves are drying up. We should stop moving tools between rows.",
@@ -156,11 +185,13 @@ enum SampleFarmData {
                   urgency: .normal,
                   observation: "Side-dress fertilizer is done. Spread evenly, nothing washed away.",
                   photoCount: 0, filedOn: .daysFromToday(-6))
-    ]
+        ]
+    }
 
     // MARK: - Supplies
 
-    static let supplies: [SupplyItem] = [
+    static func makeSupplies() -> [SupplyItem] {
+        return [
         SupplyItem(id: "i1", name: "Urea 46-0-0", category: .fertilizer,
                    quantity: 8, unit: "bags", warnBelow: 10, unitCost: 1_650),
         SupplyItem(id: "i2", name: "Complete 14-14-14", category: .fertilizer,
@@ -173,11 +204,13 @@ enum SampleFarmData {
                    quantity: 140, unit: "liters", warnBelow: 100, unitCost: 62),
         SupplyItem(id: "i6", name: "Knapsack sprayer", category: .tools,
                    quantity: 4, unit: "pieces", warnBelow: 2, unitCost: 1_950)
-    ]
+        ]
+    }
 
     // MARK: - Alerts
 
-    static let alerts: [FarmAlert] = [
+    static func makeAlerts() -> [FarmAlert] {
+        return [
         FarmAlert(id: "al1", kind: .urgentNote,
                   message: "Urgent field note: banana leaves yellowing at Sapang Bato Banana Rows",
                   relatedID: "fr1", destination: .fieldNotes,
@@ -202,11 +235,36 @@ enum SampleFarmData {
                   message: "Ready to harvest: Malabon Vegetable Plot",
                   relatedID: "p4", destination: .fields,
                   raisedOn: .daysFromToday(0), isRead: true)
+        ]
+    }
+
+    // MARK: - Weather
+
+    static let weatherDays: [WeatherDay] = [
+        WeatherDay(id: "wd1", dayLabel: "Thu", condition: "Cloudy at times",
+                   temperatureC: 28, humidityPercent: 72, rainfallMM: 4),
+        WeatherDay(id: "wd2", dayLabel: "Fri", condition: "Rain",
+                   temperatureC: 25, humidityPercent: 88, rainfallMM: 22),
+        WeatherDay(id: "wd3", dayLabel: "Sat", condition: "Heavy rain",
+                   temperatureC: 24, humidityPercent: 91, rainfallMM: 35)
+    ]
+
+    static let weatherAdvice = "Some rain is coming Thursday to Saturday. It may be better to harvest Malabon earlier, and to wait before putting fertilizer on Hilltop."
+
+    /// Keyed by field id. Written to match what each field actually grows.
+    static let weatherImpact: [String: String] = [
+        "p1": "Hold off on fertilizer until Sunday. Rain will wash it off the lower blocks.",
+        "p2": "Canal levels may rise. Check the water gates on Thursday evening.",
+        "p3": "Corn is still growing, so wet ground is fine. Do not spread fertilizer during the rain.",
+        "p4": "Ampalaya is ready now. Pick it Thursday morning before the heavy rain comes.",
+        "p5": "The banana rows can flood. Clear the drainage channels on Wednesday.",
+        "p6": "Nothing to worry about. The field is resting and the dikes were repaired."
     ]
 
     // MARK: - Activity
 
-    static let activity: [ActivityEntry] = [
+    static func makeActivity() -> [ActivityEntry] {
+        return [
         ActivityEntry(id: "act1", happenedOn: .daysFromToday(-9), actorName: "Dolores Pangilinan",
                       summary: "Finished 'Clear drainage after heavy rain'", category: .jobs),
         ActivityEntry(id: "act2", happenedOn: .daysFromToday(-6), actorName: "Ernesto Villamor",
@@ -217,5 +275,6 @@ enum SampleFarmData {
                       summary: "Wrote down harvest: Riverside Block A, 12,400 kg Rice (Best)", category: .harvest),
         ActivityEntry(id: "act5", happenedOn: .daysFromToday(-3), actorName: "Rogelio Sarmiento",
                       summary: "Sent field note: Urgent, Sapang Bato Banana Rows", category: .fields)
-    ]
+        ]
+    }
 }

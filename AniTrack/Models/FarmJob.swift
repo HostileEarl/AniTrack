@@ -7,10 +7,13 @@
 //
 
 import Foundation
+import SwiftData
 
-struct FarmJob: Identifiable, Codable, Hashable {
+@Model
+final class FarmJob {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var title: String
     var details: String
     var parcelID: String
@@ -36,6 +39,8 @@ struct FarmJob: Identifiable, Codable, Hashable {
         self.status = status
         self.priority = priority
     }
+
+    // MARK: - Computed (not stored)
 
     var isDueToday: Bool {
         return Calendar.current.isDateInToday(dueOn)

@@ -2,15 +2,17 @@
 //  HarvestRecord.swift
 //  AniTrack — MODEL LAYER
 //
-//  Amount harvested only. AniTrack never records prices, buyers or sales — it
-//  is a record of work done, not a place to sell.
+//  Amount harvested only. AniTrack never records prices, buyers or sales.
 //
 
 import Foundation
+import SwiftData
 
-struct HarvestRecord: Identifiable, Codable, Hashable {
+@Model
+final class HarvestRecord {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var parcelID: String
     var crop: CropType
     var harvestedOn: Date
@@ -36,6 +38,8 @@ struct HarvestRecord: Identifiable, Codable, Hashable {
         self.recordedByID = recordedByID
         self.remarks = remarks
     }
+
+    // MARK: - Computed (not stored)
 
     /// Sort key for month sections, e.g. 202609.
     var monthKey: Int {

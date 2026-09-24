@@ -6,10 +6,13 @@
 //
 
 import Foundation
+import SwiftData
 
-struct FieldNote: Identifiable, Codable, Hashable {
+@Model
+final class FieldNote {
 
-    let id: String
+    @Attribute(.unique) var id: String
+
     var parcelID: String
     var reportedByName: String
     var urgency: NoteUrgency

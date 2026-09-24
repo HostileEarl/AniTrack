@@ -1,4 +1,11 @@
-
+//
+//  Formatting.swift
+//  AniTrack — UTILITIES
+//
+//  One place for number and date formatting, so every screen prints an amount
+//  or a date the same way. Formatters are expensive to build, so they are
+//  created once and reused.
+//
 
 import Foundation
 

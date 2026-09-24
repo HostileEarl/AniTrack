@@ -8,12 +8,25 @@
 //    1. Every collection is `@Published private(set)`, so a view that tries to
 //       change one is a compile error rather than a matter of discipline.
 //    2. Every change funnels through a method here, which is why the activity
-//       trail, the offline queue and saving to disk can never be forgotten at
-//       a call site — they happen in one place.
+//       trail, the offline queue and saving can never be forgotten at a call
+//       site — they happen in one place.
+//
+//  SWIFTDATA AND MVC
+//
+//  This controller owns the ModelContext. No view in the app contains @Query or
+//  touches ModelContext, which is deliberate: @Query is the usual SwiftData
+//  pattern but it puts data access inside the view, and that is the one thing
+//  MVC exists to prevent. Views call methods here exactly as they did before
+//  SwiftData was introduced — not one view file changed when the storage did.
+//
+//  The published arrays are a read cache kept in step with the store by
+//  `reload()`. The store on disk is the source of truth; the arrays are what
+//  SwiftUI observes.
 //
 
 import Foundation
 import Combine
+import SwiftData
 
 // MARK: - Viewer Context
 
@@ -58,22 +71,65 @@ final class FarmDataController: ObservableObject {
 
     private let persistence: PersistenceController
 
+    /// The SwiftData store. Private on purpose — nothing outside this file may
+    /// reach it, which is what keeps data access out of the view layer.
+    private let context: ModelContext
+
     // MARK: - Initialisation
 
-    init(persistence: PersistenceController = .shared) {
+    init(context: ModelContext, persistence: PersistenceController = .shared) {
+        self.context = context
         self.persistence = persistence
-        self.parcels = persistence.loadParcels() ?? SampleFarmData.parcels
-        self.jobs = persistence.loadJobs() ?? SampleFarmData.jobs
-        self.harvests = persistence.loadHarvests() ?? SampleFarmData.harvests
-        self.fieldNotes = persistence.loadFieldNotes() ?? SampleFarmData.fieldNotes
-        self.supplies = persistence.loadSupplies() ?? SampleFarmData.supplies
-        self.stockMovements = persistence.loadStockMovements() ?? []
-        self.alerts = persistence.loadAlerts() ?? SampleFarmData.alerts
-        self.activity = persistence.loadActivity() ?? SampleFarmData.activity
+
+        self.parcels = []
+        self.jobs = []
+        self.harvests = []
+        self.fieldNotes = []
+        self.supplies = []
+        self.stockMovements = []
+        self.alerts = []
+        self.activity = []
+        self.workers = []
         self.pendingChanges = []
-        self.workers = SampleFarmData.workers
         self.lastBackedUpAt = Date()
         self.showAmountsInSacks = persistence.loadUseSacks()
+
+        SampleFarmData.seedIfEmpty(into: context)
+        reload()
+    }
+
+    // MARK: - Reading from the Store
+
+    /// Pulls every collection out of SwiftData into the published arrays.
+    /// Called once at launch and after each change, so the interface and the
+    /// store can never drift apart.
+    private func reload() {
+        parcels = fetch(Parcel.self)
+        jobs = fetch(FarmJob.self)
+        harvests = fetch(HarvestRecord.self)
+        fieldNotes = fetch(FieldNote.self)
+        supplies = fetch(SupplyItem.self)
+        stockMovements = fetch(StockMovement.self)
+        alerts = fetch(FarmAlert.self)
+        activity = fetch(ActivityEntry.self)
+        workers = fetch(Worker.self)
+    }
+
+    private func fetch<T: PersistentModel>(_ type: T.Type) -> [T] {
+        return (try? context.fetch(FetchDescriptor<T>())) ?? []
+    }
+
+    /// Writes pending changes to disk and refreshes the arrays. Every mutating
+    /// method below ends here.
+    private func commit() {
+        do {
+            try context.save()
+        } catch {
+            // A failed save must never crash the app. The interface keeps
+            // working against what is in memory and the next save retries.
+            print("AniTrack could not save: \(error.localizedDescription)")
+        }
+        reload()
     }
 
     // MARK: - Lookups
@@ -235,6 +291,27 @@ final class FarmDataController: ObservableObject {
         return supplies.filter { $0.isRunningLow }
     }
 
+    // MARK: - Weather
+
+    /// Sample outlook. The weather screen states plainly that it is not live.
+    var weatherDays: [WeatherDay] {
+        return SampleFarmData.weatherDays
+    }
+
+    var weatherAdvice: String {
+        return SampleFarmData.weatherAdvice
+    }
+
+    /// What the coming weather means for each field the viewer can see.
+    func weatherImpacts(for viewer: ViewerContext) -> [FieldWeatherImpact] {
+        return visibleParcels(for: viewer).map { parcel in
+            FieldWeatherImpact(id: parcel.id,
+                               fieldName: parcel.name,
+                               advice: SampleFarmData.weatherImpact[parcel.id]
+                                   ?? "Nothing to watch out for on this field.")
+        }
+    }
+
     // MARK: - Job Changes
 
     func addJob(title: String,
@@ -253,79 +330,80 @@ final class FarmDataController: ObservableObject {
                           dueOn: dueOn,
                           status: .notStarted,
                           priority: priority)
-        jobs.append(job)
+        context.insert(job)
         record("Added job '\(clean)'", category: .jobs, by: viewer)
-        persistence.saveJobs(jobs)
+        commit()
     }
 
+    /// Objects fetched from SwiftData are references, so changing a property
+    /// changes the stored object directly. There is no array element to write
+    /// back to, which is one thing reference types make simpler.
     func toggleJobDone(_ job: FarmJob, by viewer: ViewerContext) {
-        guard let index = jobs.firstIndex(where: { $0.id == job.id }) else { return }
-        let nowDone = !jobs[index].status.isDone
-        jobs[index].status = nowDone ? .done : .notStarted
+        let nowDone = !job.status.isDone
+        job.status = nowDone ? .done : .notStarted
         if nowDone {
-            record("Finished '\(jobs[index].title)'", category: .jobs, by: viewer)
+            record("Finished '\(job.title)'", category: .jobs, by: viewer)
             clearAlerts(relatedTo: job.id)
         }
-        persistence.saveJobs(jobs)
+        commit()
     }
 
     func startJob(_ job: FarmJob, by viewer: ViewerContext) {
-        guard let index = jobs.firstIndex(where: { $0.id == job.id }) else { return }
-        jobs[index].status = .started
-        record("Started '\(jobs[index].title)'", category: .jobs, by: viewer)
-        persistence.saveJobs(jobs)
+        job.status = .started
+        record("Started '\(job.title)'", category: .jobs, by: viewer)
+        commit()
     }
 
     func deleteJob(_ job: FarmJob, by viewer: ViewerContext) {
-        jobs.removeAll { $0.id == job.id }
-        record("Deleted job '\(job.title)'", category: .jobs, by: viewer)
-        persistence.saveJobs(jobs)
+        let title = job.title
+        context.delete(job)
+        record("Deleted job '\(title)'", category: .jobs, by: viewer)
+        commit()
     }
 
     // MARK: - Field Changes
 
     func updateCondition(_ condition: FieldCondition, for parcel: Parcel, by viewer: ViewerContext) {
-        guard let index = parcels.firstIndex(where: { $0.id == parcel.id }) else { return }
-        guard parcels[index].condition != condition else { return }
-        parcels[index].condition = condition
+        guard parcel.condition != condition else { return }
+        parcel.condition = condition
         record("Set \(parcel.name) to \(condition.displayName)", category: .fields, by: viewer)
-        persistence.saveParcels(parcels)
+        commit()
     }
 
     func advanceStage(for parcel: Parcel, by viewer: ViewerContext) {
-        guard let index = parcels.firstIndex(where: { $0.id == parcel.id }) else { return }
-        parcels[index].stage = parcels[index].stage.next
-        record("Moved \(parcel.name) to \(parcels[index].stage.displayName)",
+        parcel.stage = parcel.stage.next
+        record("Moved \(parcel.name) to \(parcel.stage.displayName)",
                category: .fields, by: viewer)
-        persistence.saveParcels(parcels)
+        commit()
     }
 
     func addParcel(_ parcel: Parcel, by viewer: ViewerContext) {
-        parcels.append(parcel)
+        context.insert(parcel)
         record("Added field '\(parcel.name)'", category: .fields, by: viewer)
-        persistence.saveParcels(parcels)
+        commit()
     }
 
+    /// With reference types the caller has already changed the object, so this
+    /// only needs to write the trail and save.
     func updateParcel(_ parcel: Parcel, by viewer: ViewerContext) {
-        guard let index = parcels.firstIndex(where: { $0.id == parcel.id }) else { return }
-        parcels[index] = parcel
         record("Changed field '\(parcel.name)'", category: .fields, by: viewer)
-        persistence.saveParcels(parcels)
+        commit()
     }
 
     /// Deleting a field also removes its jobs, harvests and notes. Those records
     /// have no meaning without the land they describe, so leaving them behind
     /// would put orphans in every total the app calculates.
     func deleteParcel(_ parcel: Parcel, by viewer: ViewerContext) {
-        parcels.removeAll { $0.id == parcel.id }
-        jobs.removeAll { $0.parcelID == parcel.id }
-        harvests.removeAll { $0.parcelID == parcel.id }
-        fieldNotes.removeAll { $0.parcelID == parcel.id }
-        record("Deleted field '\(parcel.name)' and its records", category: .fields, by: viewer)
-        persistence.saveParcels(parcels)
-        persistence.saveJobs(jobs)
-        persistence.saveHarvests(harvests)
-        persistence.saveFieldNotes(fieldNotes)
+        let parcelID = parcel.id
+        let name = parcel.name
+
+        for job in jobs where job.parcelID == parcelID { context.delete(job) }
+        for harvest in harvests where harvest.parcelID == parcelID { context.delete(harvest) }
+        for note in fieldNotes where note.parcelID == parcelID { context.delete(note) }
+        context.delete(parcel)
+
+        record("Deleted field '\(name)' and its records", category: .fields, by: viewer)
+        commit()
     }
 
     // MARK: - Harvest Changes
@@ -346,11 +424,11 @@ final class FarmDataController: ObservableObject {
                                    quality: quality,
                                    recordedByID: recordedByID,
                                    remarks: remarks)
-        harvests.append(record)
+        context.insert(record)
         let name = parcelName(for: parcelID)
         self.record("Wrote down harvest: \(name), \(Formatting.wholeNumber(kilograms)) kg \(crop.displayName)",
                     category: .harvest, by: viewer)
-        persistence.saveHarvests(harvests)
+        commit()
     }
 
     // MARK: - Field Note Changes
@@ -371,7 +449,7 @@ final class FarmDataController: ObservableObject {
                              photoCount: photoCount,
                              filedOn: Date(),
                              notifyManager: notifyManager)
-        fieldNotes.insert(note, at: 0)
+        context.insert(note)
 
         let name = parcelName(for: parcelID)
         record("Sent field note: \(urgency.displayName), \(name)", category: .fields, by: viewer)
@@ -379,24 +457,20 @@ final class FarmDataController: ObservableObject {
         // An urgent note is the crew telling the manager something is wrong, so
         // it both flags the field and raises an alert.
         if urgency == .urgent {
-            if let index = parcels.firstIndex(where: { $0.id == parcelID }) {
-                parcels[index].condition = .problem
-                persistence.saveParcels(parcels)
-            }
+            parcel(id: parcelID)?.condition = .problem
             raiseAlert(kind: .urgentNote,
                        message: "Urgent field note from \(viewer.actorName) about \(name)",
                        relatedID: note.id,
                        destination: .fieldNotes)
         }
-        persistence.saveFieldNotes(fieldNotes)
+        commit()
     }
 
     func resolveFieldNote(_ note: FieldNote, by viewer: ViewerContext) {
-        guard let index = fieldNotes.firstIndex(where: { $0.id == note.id }) else { return }
-        fieldNotes[index].isResolved = true
+        note.isResolved = true
         record("Marked a field note as fixed", category: .fields, by: viewer)
         clearAlerts(relatedTo: note.id)
-        persistence.saveFieldNotes(fieldNotes)
+        commit()
     }
 
     // MARK: - Supply Changes
@@ -408,10 +482,11 @@ final class FarmDataController: ObservableObject {
                              happenedOn: Date,
                              note: String,
                              by viewer: ViewerContext) {
-        guard quantity > 0,
-              let index = supplies.firstIndex(where: { $0.id == itemID }) else { return }
+        guard quantity > 0, let item = supplyItem(id: itemID) else { return }
 
-        let before = supplies[index]
+        let wasRunningLow = item.isRunningLow
+        let itemName = item.name
+        let itemUnit = item.unit
         let movement = StockMovement(itemID: itemID,
                                      kind: kind,
                                      quantity: quantity,
@@ -419,32 +494,29 @@ final class FarmDataController: ObservableObject {
                                      happenedOn: happenedOn,
                                      note: note,
                                      recordedByName: viewer.actorName)
-        stockMovements.insert(movement, at: 0)
+        context.insert(movement)
 
         let change = kind == .added ? quantity : -quantity
-        supplies[index].quantity = max(0, before.quantity + change)
-        let after = supplies[index]
+        item.quantity = max(0, item.quantity + change)
 
-        record("\(kind.displayName) \(Formatting.wholeNumber(quantity)) \(before.unit) of \(before.name)",
+        record("\(kind.displayName) \(Formatting.wholeNumber(quantity)) \(itemUnit) of \(itemName)",
                category: .supplies, by: viewer)
 
         // Only warn on the crossing, not on every movement while already low.
-        if after.isRunningLow && !before.isRunningLow {
+        if item.isRunningLow && !wasRunningLow {
             raiseAlert(kind: .runningLow,
-                       message: "Running low: \(after.name) is at \(after.quantityLabel), below the warning level of \(Formatting.wholeNumber(after.warnBelow))",
-                       relatedID: after.id,
+                       message: "Running low: \(item.name) is at \(item.quantityLabel), below the warning level of \(Formatting.wholeNumber(item.warnBelow))",
+                       relatedID: item.id,
                        destination: .supplies)
         }
 
-        persistence.saveSupplies(supplies)
-        persistence.saveStockMovements(stockMovements)
+        commit()
     }
 
     func updateWarningLevel(_ level: Double, for item: SupplyItem, by viewer: ViewerContext) {
-        guard let index = supplies.firstIndex(where: { $0.id == item.id }) else { return }
-        supplies[index].warnBelow = max(0, level)
+        item.warnBelow = max(0, level)
         record("Changed the warning level for \(item.name)", category: .supplies, by: viewer)
-        persistence.saveSupplies(supplies)
+        commit()
     }
 
     // MARK: - Alerts
@@ -456,32 +528,31 @@ final class FarmDataController: ObservableObject {
                               destination: destination,
                               raisedOn: Date(),
                               isRead: false)
-        alerts.insert(alert, at: 0)
-        persistence.saveAlerts(alerts)
+        context.insert(alert)
+        // No commit here: alerts are always raised from inside another change,
+        // and that change's own commit saves this too.
     }
 
     func markAlertRead(_ alert: FarmAlert) {
-        guard let index = alerts.firstIndex(where: { $0.id == alert.id }) else { return }
-        alerts[index].isRead = true
-        persistence.saveAlerts(alerts)
+        alert.isRead = true
+        commit()
     }
 
     func markAllAlertsRead() {
-        for index in alerts.indices {
-            alerts[index].isRead = true
-        }
-        persistence.saveAlerts(alerts)
+        for alert in alerts { alert.isRead = true }
+        commit()
     }
 
     func dismissAlert(_ alert: FarmAlert) {
-        alerts.removeAll { $0.id == alert.id }
-        persistence.saveAlerts(alerts)
+        context.delete(alert)
+        commit()
     }
 
     /// Removes alerts pointing at something that has just been dealt with.
     private func clearAlerts(relatedTo id: String) {
-        alerts.removeAll { $0.relatedID == id }
-        persistence.saveAlerts(alerts)
+        for alert in alerts where alert.relatedID == id {
+            context.delete(alert)
+        }
     }
 
     // MARK: - Activity and Backup
@@ -492,8 +563,7 @@ final class FarmDataController: ObservableObject {
                                   actorName: viewer.actorName,
                                   summary: summary,
                                   category: category)
-        activity.insert(entry, at: 0)
-        persistence.saveActivity(activity)
+        context.insert(entry)
 
         if isOffline {
             pendingChanges.insert(PendingChange(summary: summary), at: 0)
@@ -530,24 +600,35 @@ final class FarmDataController: ObservableObject {
             + fieldNotes.count + supplies.count + stockMovements.count
     }
 
+    /// Size of the SwiftData store file on disk.
     func storageSizeLabel() -> String {
-        let bytes = persistence.storageBytes()
-        if bytes < 1024 { return "\(bytes) bytes" }
-        let kilobytes = Double(bytes) / 1024
-        return String(format: "%.1f KB", kilobytes)
+        guard let url = context.container.configurations.first?.url,
+              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return "Not known yet"
+        }
+        if size < 1024 { return "\(size) bytes" }
+        let kilobytes = Double(size) / 1024
+        if kilobytes < 1024 { return String(format: "%.0f KB", kilobytes) }
+        return String(format: "%.1f MB", kilobytes / 1024)
     }
 
-    /// Puts everything back to the sample data.
+    /// Empties the store and puts the sample farm back.
     func resetToSampleData() {
-        persistence.eraseAll()
-        parcels = SampleFarmData.parcels
-        jobs = SampleFarmData.jobs
-        harvests = SampleFarmData.harvests
-        fieldNotes = SampleFarmData.fieldNotes
-        supplies = SampleFarmData.supplies
-        stockMovements = []
-        alerts = SampleFarmData.alerts
-        activity = SampleFarmData.activity
+        for parcel in parcels { context.delete(parcel) }
+        for job in jobs { context.delete(job) }
+        for harvest in harvests { context.delete(harvest) }
+        for note in fieldNotes { context.delete(note) }
+        for item in supplies { context.delete(item) }
+        for movement in stockMovements { context.delete(movement) }
+        for alert in alerts { context.delete(alert) }
+        for entry in activity { context.delete(entry) }
+        for worker in workers { context.delete(worker) }
+
+        try? context.save()
+
+        SampleFarmData.seedIfEmpty(into: context)
+        reload()
+
         pendingChanges = []
         lastBackedUpAt = Date()
         showAmountsInSacks = false
@@ -558,8 +639,17 @@ final class FarmDataController: ObservableObject {
 // MARK: - Preview Support
 
 extension FarmDataController {
-    /// Sample data with no reading or writing to disk.
+
+    /// A controller backed by a store held only in memory, so previews and
+    /// tests never touch the real database on disk.
     static var preview: FarmDataController {
-        return FarmDataController(persistence: .inMemory)
+        let container = try! ModelContainer(
+            for: Parcel.self, FarmJob.self, HarvestRecord.self, FieldNote.self,
+            SupplyItem.self, StockMovement.self, FarmAlert.self,
+            ActivityEntry.self, Worker.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        return FarmDataController(context: ModelContext(container),
+                                  persistence: .inMemory)
     }
 }
